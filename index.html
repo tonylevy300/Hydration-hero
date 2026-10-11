@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hydration Hero: Daily Red Bull Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Nunito', sans-serif;
+            background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+            min-height: 100vh;
+        }
+
+        .bounce {
+            animation: bounce 0.5s cubic-bezier(0.36, 0, 0.66, -0.56) alternate infinite;
+        }
+
+        @keyframes bounce {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-10px); }
+        }
+
+        .glass-fill {
+            transition: height 0.5s ease-in-out, background-color 0.5s ease;
+        }
+
+        #confetti-canvas {
+            pointer-events: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 50;
+        }
+
+        .reward-pop {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center p-4" onload="initDailyTracker()">
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <div class="bg-white/80 backdrop-blur-md rounded-3xl shadow-xl p-8 max-w-sm w-full text-center relative overflow-hidden mt-10">
+        
+        <h1 class="text-3xl font-black text-blue-600 mb-2">Hydration Hero</h1>
+        <p class="text-gray-600 font-bold mb-2">Level <span id="level">1</span></p>
+        <p class="text-xs text-blue-500 font-semibold mb-4 bg-blue-50 py-1 px-3 rounded-full inline-block">Daily Progress Saved</p>
+
+        <!-- Visual Plant/Progress -->
+        <div class="h-48 flex items-end justify-center mb-6 relative">
+            <div class="w-24 h-48 bg-gray-200 rounded-t-lg relative overflow-hidden border-4 border-blue-200">
+                <div id="water-level" class="absolute bottom-0 left-0 w-full bg-blue-400 glass-fill" style="height: 0%;"></div>
+            </div>
+            <div id="plant-emoji" class="absolute bottom-4 text-6xl bounce">🌱</div>
+        </div>
+
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-gray-800"><span id="glasses">0</span> / 8 Glasses</h2>
+            <p class="text-sm text-gray-500 mt-1">Drink 8 glasses today to earn a Red Bull!</p>
+        </div>
+
+        <button onclick="drinkWater(event)" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-8 rounded-full w-full text-xl transition transform active:scale-95 shadow-lg flex items-center justify-center gap-2">
+            💧 Drink a Glass!
+        </button>
+
+        <!-- Red Bull Stash -->
+        <div class="mt-8 pt-6 border-t-2 border-blue-100">
+            <h3 class="text-lg font-bold text-gray-700 mb-3">Your Reward Stash</h3>
+            <div id="reward-stash" class="flex flex-wrap justify-center gap-2 min-h-[3rem]">
+                <!-- Red Bulls will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Celebration Modal -->
+    <div id="reward-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-8 text-center max-w-sm mx-4 transform scale-0 transition-transform duration-300" id="modal-content">
+            <div class="text-6xl mb-4">🥫💨</div>
+            <h2 class="text-3xl font-black text-red-600 mb-2">Daily Goal Crushed!</h2>
+            <p class="text-gray-700 mb-6">You drank 8 glasses of water today. You've officially earned a real-life Red Bull. Treat yourself!</p>
+            <button onclick="closeModal()" class="bg-gray-800 hover:bg-black text-white font-bold py-3 px-6 rounded-full w-full">
+                Stash & Continue
+            </button>
+        </div>
+    </div>
+
+    <!-- Missed Day Modal -->
+    <div id="missed-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-8 text-center max-w-sm mx-4 transform scale-0 transition-transform duration-300" id="missed-modal-content">
+            <div class="text-6xl mb-4">🥀</div>
+            <h2 class="text-3xl font-black text-amber-600 mb-2">Oh no!</h2>
+            <p class="text-gray-700 mb-6">You missed <span id="missed-days-count" class="font-bold text-xl"></span> day(s) of tracking. Your plant wilted and lost progress.</p>
+            <button onclick="closeMissedModal()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-6 rounded-full w-full transition transform active:scale-95">
+                I'll do better today!
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let glasses = 0;
+        let level = 1;
+        let redBulls = 0;
+        const goal = 8;
+        
+        const plantStages = ['🌱', '🌿', '🪴', '🎋', '🌳', '🌸', '🌺'];
+
+        function initDailyTracker() {
+            // Get today at midnight for accurate day-to-day comparison
+            const today = new Date(new Date().toDateString());
+            const savedDateStr = localStorage.getItem('hydrationDate');
+            
+            // Load saved stats
+            level = parseInt(localStorage.getItem('hydrationLevel')) || 1;
+            redBulls = parseInt(localStorage.getItem('hydrationRedBulls')) || 0;
+            
+            if (savedDateStr) {
+                const savedDate = new Date(savedDateStr);
+                
+                // Calculate difference in days
+                const diffTime = today.getTime() - savedDate.getTime();
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)); 
+                
+                if (diffDays === 0) {
+                    // Same day, resume daily progress
+                    glasses = parseInt(localStorage.getItem('hydrationGlasses')) || 0;
+                } else {
+                    // New day, reset glasses
+                    glasses = 0;
+                    
+                    // Consequence: missed 2 or more days? (diffDays = 1 means they played yesterday, which is good)
+                    if (diffDays > 1) {
+                        const daysMissed = diffDays - 1;
+                        level = Math.max(1, level - daysMissed); // Drop level, minimum 1
+                        showMissedModal(daysMissed);
+                    }
+                    
+                    localStorage.setItem('hydrationDate', today.toDateString());
+                    saveProgress();
+                }
+            } else {
+                // First time ever playing
+                glasses = 0;
+                localStorage.setItem('hydrationDate', today.toDateString());
+                saveProgress();
+            }
+
+            renderStash();
+            updateUI();
+        }
+
+        function showMissedModal(days) {
+            document.getElementById('missed-days-count').innerText = days;
+            const modal = document.getElementById('missed-modal');
+            const modalContent = document.getElementById('missed-modal-content');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                modalContent.classList.remove('scale-0');
+                modalContent.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeMissedModal() {
+            const modal = document.getElementById('missed-modal');
+            const modalContent = document.getElementById('missed-modal-content');
+            
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-0');
+            
+            setTimeout(() => {
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function saveProgress() {
+            localStorage.setItem('hydrationGlasses', glasses);
+            localStorage.setItem('hydrationLevel', level);
+            localStorage.setItem('hydrationRedBulls', redBulls);
+            localStorage.setItem('hydrationDate', new Date().toDateString());
+        }
+
+        function drinkWater(e) {
+            if (glasses < goal) {
+                glasses++;
+                saveProgress();
+                updateUI();
+                createSplash(e.clientX, e.clientY);
+                
+                if (glasses === goal) {
+                    setTimeout(triggerReward, 500);
+                }
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('glasses').innerText = glasses;
+            
+            // Update water visual (daily progress)
+            const fillPercentage = (glasses / goal) * 100;
+            document.getElementById('water-level').style.height = `${fillPercentage}%`;
+            
+            // Update plant visual based on overall LEVEL instead of daily glasses
+            const stageIndex = Math.min(level - 1, plantStages.length - 1);
+            document.getElementById('plant-emoji').innerText = plantStages[stageIndex];
+            document.getElementById('level').innerText = level;
+        }
+
+        function triggerReward() {
+            fireConfetti();
+            const modal = document.getElementById('reward-modal');
+            const modalContent = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                modalContent.classList.remove('scale-0');
+                modalContent.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('reward-modal');
+            const modalContent = document.getElementById('modal-content');
+            
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-0');
+            
+            setTimeout(() => {
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+                
+                redBulls++;
+                level++;
+                glasses = 0; // Reset for next daily round
+                
+                saveProgress();
+                renderStash();
+                updateUI();
+            }, 300);
+        }
+
+        function renderStash() {
+            const stash = document.getElementById('reward-stash');
+            stash.innerHTML = ''; // Clear current stash
+            
+            if (redBulls === 0) {
+                const emptyText = document.createElement('p');
+                emptyText.id = 'empty-stash';
+                emptyText.className = 'text-sm text-gray-400 italic';
+                emptyText.innerText = 'No rewards yet. Keep drinking water!';
+                stash.appendChild(emptyText);
+                return;
+            }
+
+            for (let i = 0; i < redBulls; i++) {
+                const newReward = document.createElement('div');
+                newReward.className = 'text-3xl reward-pop cursor-pointer hover:scale-110 transition-transform';
+                newReward.innerText = '🥫';
+                newReward.title = 'Earned Red Bull! Click to consume.';
+                
+                newReward.onclick = function() {
+                    this.style.transform = 'scale(0)';
+                    setTimeout(() => {
+                        redBulls--;
+                        saveProgress();
+                        renderStash(); // Re-render to show accurate count or empty message
+                    }, 200);
+                };
+                stash.appendChild(newReward);
+            }
+        }
+
+        // Particle System for Water Splashes
+        function createSplash(x, y) {
+            const canvas = document.getElementById('confetti-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const particles = [];
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 1) * 10,
+                    size: Math.random() * 5 + 3,
+                    color: '#60A5FA',
+                    alpha: 1
+                });
+            }
+
+            function animateSplash() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let active = false;
+                
+                particles.forEach(p => {
+                    if (p.alpha > 0) {
+                        active = true;
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        p.vy += 0.5; // gravity
+                        p.alpha -= 0.02;
+                        
+                        ctx.globalAlpha = Math.max(0, p.alpha);
+                        ctx.fillStyle = p.color;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+
+                if (active) requestAnimationFrame(animateSplash);
+                else ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            animateSplash();
+        }
+
+        // Simple Confetti System for Level Up
+        function fireConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const colors = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa'];
+            const particles = [];
+            
+            for (let i = 0; i < 100; i++) {
+                particles.push({
+                    x: canvas.width / 2,
+                    y: canvas.height + 10,
+                    vx: (Math.random() - 0.5) * 20,
+                    vy: -(Math.random() * 15 + 10),
+                    size: Math.random() * 8 + 4,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    rot: Math.random() * 360,
+                    rotSpeed: (Math.random() - 0.5) * 10
+                });
+            }
+
+            function animateConfetti() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let active = false;
+                
+                particles.forEach(p => {
+                    if (p.y < canvas.height + 20) {
+                        active = true;
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        p.vy += 0.3; // gravity
+                        p.rot += p.rotSpeed;
+                        
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.rotate(p.rot * Math.PI / 180);
+                        ctx.fillStyle = p.color;
+                        ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                        ctx.restore();
+                    }
+                });
+
+                if (active) requestAnimationFrame(animateConfetti);
+                else ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            animateConfetti();
+        }
+    </script>
+</body>
+</html>
